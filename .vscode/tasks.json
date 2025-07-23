@@ -4,9 +4,12 @@
         {
             "label": "Run Python Script",
             "type": "shell",
-            "command": "python main.py",
+            "command": "C:/Users/VU265EC/dev/primo/.venv/Scripts/python.exe main.py",
             "group": "build",
-            "problemMatcher": []
+            "problemMatcher": [],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
         }
     ]
 }
