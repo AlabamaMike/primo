@@ -1,41 +1,28 @@
 # primo
 
-A Python-based task management web application using FastAPI, Supabase, Tailwind CSS, and HTMX.
+A Python-based task management web application using FastAPI, SQLite, Tailwind CSS, and HTMX.
 
 ## Features
 
-- 🔐 User authentication with Supabase Auth (email/password)
+- 🔐 User authentication with secure password hashing
 - 📝 Personal task management with CRUD operations
 - 📱 Mobile-friendly responsive design with Tailwind CSS
 - ⚡ Real-time updates with HTMX
 - 🏷️ Task priorities (Low, Medium, High, Urgent)
 - 📊 Task statuses (To Do, In Progress, Completed)
 - 📅 Due date tracking
-- 🔒 Secure row-level security with Supabase
+- � Simple SQLite database storage
+- 🔒 Session-based authentication
 
 ## Setup
 
 ### 1. Install dependencies
 Dependencies are already installed in the virtual environment:
 ```bash
-pip install fastapi uvicorn supabase python-dotenv jinja2 python-multipart certifi
+pip install fastapi uvicorn jinja2 python-multipart sqlalchemy
 ```
 
-### 2. Configure Supabase
-
-#### Database Setup
-1. Go to your Supabase project dashboard
-2. Navigate to the SQL Editor
-3. Run the SQL script from `database_setup.sql` to create the tasks table and policies
-
-#### Environment Configuration
-Your `.env` file is already configured with:
-```
-SUPABASE_URL=https://vdcqtridfcqizmenquaa.supabase.co
-SUPABASE_KEY=your_supabase_anon_key
-```
-
-### 3. Run the application
+### 2. Run the application
 
 ```bash
 python main.py
@@ -45,41 +32,47 @@ Or use the VS Code task "Run Python Script"
 
 The application will be available at: http://localhost:8000
 
+The SQLite database (`primo.db`) will be automatically created on first run.
+
 ## Project Structure
 
 ```
 primo/
 ├── main.py                          # Application entry point
 ├── app.py                           # FastAPI application
+├── database.py                      # SQLite database client
 ├── models.py                        # Pydantic models
-├── supabase_client.py              # Supabase client wrapper
-├── database_setup.sql              # Database schema and policies
-├── templates/                      # Jinja2 templates
-│   ├── base.html                   # Base template
-│   ├── login.html                  # Login page
-│   ├── register.html               # Registration page
-│   ├── dashboard.html              # Main dashboard
-│   └── partials/                   # HTMX partial templates
-│       ├── task_list.html          # Task list component
-│       └── task_edit_form.html     # Task edit form
-├── static/                         # Static files (CSS, JS)
-├── .env                           # Environment variables
-├── .env.example                   # Environment template
-└── .vscode/tasks.json             # VS Code tasks
+├── primo.db                         # SQLite database (auto-created)
+├── templates/                       # Jinja2 templates
+│   ├── base.html                    # Base template
+│   ├── login.html                   # Login page
+│   ├── register.html                # Registration page
+│   ├── dashboard.html               # Main dashboard
+│   └── partials/                    # HTMX partial templates
+│       ├── task_list.html           # Task list component
+│       └── task_edit_form.html      # Task edit form
+├── static/                          # Static files (CSS, JS)
+└── .vscode/tasks.json               # VS Code tasks
 ```
 
 ## Database Schema
 
-The `tasks` table includes:
-- `id` - Primary key
+### Users Table
+- `id` - Unique user identifier
+- `email` - User email (unique)
+- `password_hash` - Securely hashed password
+- `created_at` - Registration timestamp
+
+### Tasks Table
+- `id` - Primary key (auto-increment)
 - `title` - Task title (required)
 - `description` - Optional task description
 - `due_date` - Optional due date
 - `priority` - Low, Medium, High, Urgent
 - `status` - To Do, In Progress, Completed
-- `user_id` - Reference to authenticated user
-- `created_at` - Timestamp
-- `updated_at` - Auto-updated timestamp
+- `user_id` - Reference to user
+- `created_at` - Creation timestamp
+- `updated_at` - Last update timestamp
 
 ## API Endpoints
 
@@ -107,7 +100,14 @@ The `tasks` table includes:
 ## Technologies
 
 - **Backend**: FastAPI (Python)
-- **Database**: Supabase (PostgreSQL)
-- **Authentication**: Supabase Auth
+- **Database**: SQLite
+- **Authentication**: Session-based with secure password hashing
 - **Frontend**: HTML, Tailwind CSS, HTMX
 - **Templates**: Jinja2
+
+## Security Features
+
+- Password hashing using PBKDF2 with SHA-256
+- Session-based authentication
+- CSRF protection
+- SQL injection prevention with parameterized queries

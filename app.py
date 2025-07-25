@@ -1,15 +1,14 @@
-from fastapi import FastAPI, Request, Form, HTTPException, Depends, status
+from fastapi import FastAPI, Request, Form, HTTPException, Depends, status, Cookie
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from supabase_client import SupabaseClient
+from database import SQLiteDatabase
 from models import TaskCreate, TaskUpdate, UserCreate, UserLogin, TaskStatus, TaskPriority
 from typing import Optional, Annotated
 from datetime import date
-import json
+import secrets
 
-app = FastAPI(title="Primo Task Manager", description="A task management app with Supabase backend")
+app = FastAPI(title="Primo Task Manager", description="A task management app with SQLite backend")
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -17,23 +16,30 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # Templates
 templates = Jinja2Templates(directory="templates")
 
-# Supabase client
-supabase_client = SupabaseClient()
+# SQLite database
+db = SQLiteDatabase()
 
-# Security
-security = HTTPBearer(auto_error=False)
+# Simple session management
+sessions: dict = {}
 
-async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
-    """Get current user from token"""
-    if not credentials:
+def create_session(user_id: str) -> str:
+    """Create a new session for a user"""
+    session_id = secrets.token_urlsafe(32)
+    sessions[session_id] = user_id
+    return session_id
+
+def get_current_user(session_id: Optional[str] = Cookie(None)):
+    """Get current user from session"""
+    if not session_id or session_id not in sessions:
         return None
     
-    try:
-        # Verify token with Supabase
-        user = supabase_client.get_user()
-        return user
-    except Exception:
-        return None
+    user_id = sessions[session_id]
+    return db.get_user_by_id(user_id)
+
+def delete_session(session_id: str):
+    """Delete a session"""
+    if session_id in sessions:
+        del sessions[session_id]
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request, user=Depends(get_current_user)):
@@ -51,11 +57,13 @@ async def login_page(request: Request):
 async def login(request: Request, email: str = Form(...), password: str = Form(...)):
     """Handle login form submission"""
     user_data = UserLogin(email=email, password=password)
-    result = await supabase_client.sign_in(user_data)
+    result = await db.sign_in(user_data)
     
     if result["success"]:
-        # Redirect to dashboard on success
+        # Create session and redirect to dashboard
+        session_id = create_session(result["data"]["user"]["id"])
         response = RedirectResponse(url="/dashboard", status_code=302)
+        response.set_cookie(key="session_id", value=session_id, httponly=True)
         return response
     else:
         # Return login page with error
@@ -73,12 +81,12 @@ async def register_page(request: Request):
 async def register(request: Request, email: str = Form(...), password: str = Form(...)):
     """Handle registration form submission"""
     user_data = UserCreate(email=email, password=password)
-    result = await supabase_client.sign_up(user_data)
+    result = await db.sign_up(user_data)
     
     if result["success"]:
         return templates.TemplateResponse("register.html", {
             "request": request, 
-            "success": "Registration successful! Please check your email to verify your account, then login."
+            "success": "Registration successful! You can now login with your credentials."
         })
     else:
         return templates.TemplateResponse("register.html", {
@@ -92,7 +100,7 @@ async def dashboard(request: Request, user=Depends(get_current_user)):
     if not user:
         return RedirectResponse(url="/login", status_code=302)
     
-    tasks = await supabase_client.get_tasks(user["id"])
+    tasks = await db.get_tasks(user["id"])
     return templates.TemplateResponse("dashboard.html", {
         "request": request, 
         "user": user, 
@@ -107,7 +115,7 @@ async def get_tasks_html(request: Request, user=Depends(get_current_user)):
     if not user:
         raise HTTPException(status_code=401, detail="Unauthorized")
     
-    tasks = await supabase_client.get_tasks(user["id"])
+    tasks = await db.get_tasks(user["id"])
     return templates.TemplateResponse("partials/task_list.html", {
         "request": request, 
         "tasks": tasks,
@@ -143,11 +151,11 @@ async def create_task(
         priority=priority
     )
     
-    result = await supabase_client.create_task(task_data, user["id"])
+    result = await db.create_task(task_data, user["id"])
     
     if result["success"]:
         # Return updated task list
-        tasks = await supabase_client.get_tasks(user["id"])
+        tasks = await db.get_tasks(user["id"])
         return templates.TemplateResponse("partials/task_list.html", {
             "request": request, 
             "tasks": tasks,
@@ -163,7 +171,7 @@ async def edit_task_form(request: Request, task_id: int, user=Depends(get_curren
     if not user:
         raise HTTPException(status_code=401, detail="Unauthorized")
     
-    task = await supabase_client.get_task(task_id, user["id"])
+    task = await db.get_task(task_id, user["id"])
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     
@@ -205,11 +213,11 @@ async def update_task(
         status=status
     )
     
-    result = await supabase_client.update_task(task_id, task_data, user["id"])
+    result = await db.update_task(task_id, task_data, user["id"])
     
     if result["success"]:
         # Return updated task list
-        tasks = await supabase_client.get_tasks(user["id"])
+        tasks = await db.get_tasks(user["id"])
         return templates.TemplateResponse("partials/task_list.html", {
             "request": request, 
             "tasks": tasks,
@@ -225,11 +233,11 @@ async def delete_task(request: Request, task_id: int, user=Depends(get_current_u
     if not user:
         raise HTTPException(status_code=401, detail="Unauthorized")
     
-    result = await supabase_client.delete_task(task_id, user["id"])
+    result = await db.delete_task(task_id, user["id"])
     
     if result["success"]:
         # Return updated task list
-        tasks = await supabase_client.get_tasks(user["id"])
+        tasks = await db.get_tasks(user["id"])
         return templates.TemplateResponse("partials/task_list.html", {
             "request": request, 
             "tasks": tasks,
@@ -240,11 +248,14 @@ async def delete_task(request: Request, task_id: int, user=Depends(get_current_u
         raise HTTPException(status_code=400, detail=result.get("error", "Failed to delete task"))
 
 @app.post("/logout")
-async def logout(user=Depends(get_current_user)):
+async def logout(request: Request, session_id: Optional[str] = Cookie(None)):
     """Logout user"""
-    if user:
-        supabase_client.sign_out()
-    return RedirectResponse(url="/login", status_code=302)
+    if session_id:
+        delete_session(session_id)
+    
+    response = RedirectResponse(url="/login", status_code=302)
+    response.delete_cookie(key="session_id")
+    return response
 
 if __name__ == "__main__":
     import uvicorn
