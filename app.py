@@ -5,10 +5,11 @@ from fastapi.templating import Jinja2Templates
 from database import SQLiteDatabase
 from models import TaskCreate, TaskUpdate, UserCreate, UserLogin, TaskStatus, TaskPriority
 from typing import Optional, Annotated
-from datetime import date
+from datetime import date, datetime, timedelta
 import secrets
 import csv
 import io
+from collections import defaultdict
 
 app = FastAPI(title="Primo Task Manager", description="A task management app with SQLite backend")
 
@@ -292,6 +293,220 @@ async def export_tasks_csv(user=Depends(get_current_user)):
     # Create filename with current date
     from datetime import datetime
     filename = f"tasks_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    
+    # Return CSV file as download
+    return StreamingResponse(
+        io.StringIO(csv_content),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+@app.get("/reports", response_class=HTMLResponse)
+async def reports_page(request: Request, user=Depends(get_current_user)):
+    """Reports dashboard"""
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+    
+    # Get all tasks for analysis
+    tasks = await db.get_tasks(user["id"])
+    
+    # Task Status Report
+    status_counts = defaultdict(int)
+    priority_counts = defaultdict(int)
+    overdue_count = 0
+    today = date.today()
+    
+    # Task Aging Analysis
+    aging_buckets = {
+        "0-7 days": 0,
+        "8-30 days": 0,
+        "31-90 days": 0,
+        "90+ days": 0
+    }
+    
+    for task in tasks:
+        # Count by status
+        status_display = task.get('status', '').replace('_', ' ').title()
+        status_counts[status_display] += 1
+        
+        # Count by priority
+        priority_display = task.get('priority', '').title()
+        priority_counts[priority_display] += 1
+        
+        # Check for overdue tasks
+        due_date_str = task.get('due_date')
+        if due_date_str and task.get('status') != 'completed':
+            try:
+                if isinstance(due_date_str, str):
+                    due_date = datetime.fromisoformat(due_date_str).date()
+                elif isinstance(due_date_str, date):
+                    due_date = due_date_str
+                else:
+                    continue
+                
+                if due_date < today:
+                    overdue_count += 1
+            except (ValueError, AttributeError, TypeError):
+                pass
+        
+        # Calculate task age
+        created_at_data = task.get('created_at', '')
+        if created_at_data:
+            try:
+                if isinstance(created_at_data, str):
+                    created_at = datetime.fromisoformat(created_at_data.replace('Z', '+00:00'))
+                elif isinstance(created_at_data, datetime):
+                    created_at = created_at_data
+                else:
+                    continue
+                    
+                age_days = (datetime.now() - created_at).days
+                
+                if age_days <= 7:
+                    aging_buckets["0-7 days"] += 1
+                elif age_days <= 30:
+                    aging_buckets["8-30 days"] += 1
+                elif age_days <= 90:
+                    aging_buckets["31-90 days"] += 1
+                else:
+                    aging_buckets["90+ days"] += 1
+            except (ValueError, AttributeError, TypeError):
+                pass
+    
+    # Completion rate calculation
+    total_tasks = len(tasks)
+    completed_tasks = status_counts.get('Completed', 0)
+    completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+    
+    return templates.TemplateResponse("reports.html", {
+        "request": request,
+        "user": user,
+        "total_tasks": total_tasks,
+        "status_counts": dict(status_counts),
+        "priority_counts": dict(priority_counts),
+        "overdue_count": overdue_count,
+        "completion_rate": round(completion_rate, 1),
+        "aging_buckets": aging_buckets,
+        "tasks": tasks,
+        "TaskStatus": TaskStatus,
+        "TaskPriority": TaskPriority
+    })
+
+@app.get("/reports/export", response_class=HTMLResponse)
+async def export_reports(request: Request, user=Depends(get_current_user)):
+    """Export reports as CSV"""
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    # Get all tasks for analysis
+    tasks = await db.get_tasks(user["id"])
+    
+    # Create CSV content for detailed report
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Write report headers
+    writer.writerow(['Report Type', 'Metric', 'Value'])
+    writer.writerow([])  # Empty row
+    
+    # Task Status Report
+    writer.writerow(['Task Status Report', '', ''])
+    status_counts = defaultdict(int)
+    for task in tasks:
+        status_display = task.get('status', '').replace('_', ' ').title()
+        status_counts[status_display] += 1
+    
+    for status, count in status_counts.items():
+        writer.writerow(['Status', status, count])
+    
+    writer.writerow([])  # Empty row
+    
+    # Priority Distribution
+    writer.writerow(['Priority Distribution', '', ''])
+    priority_counts = defaultdict(int)
+    for task in tasks:
+        priority_display = task.get('priority', '').title()
+        priority_counts[priority_display] += 1
+    
+    for priority, count in priority_counts.items():
+        writer.writerow(['Priority', priority, count])
+    
+    writer.writerow([])  # Empty row
+    
+    # Task Aging Report
+    writer.writerow(['Task Aging Report', '', ''])
+    aging_buckets = {
+        "0-7 days": 0,
+        "8-30 days": 0,
+        "31-90 days": 0,
+        "90+ days": 0
+    }
+    
+    today = datetime.now()
+    for task in tasks:
+        created_at_data = task.get('created_at', '')
+        if created_at_data:
+            try:
+                if isinstance(created_at_data, str):
+                    created_at = datetime.fromisoformat(created_at_data.replace('Z', '+00:00'))
+                elif isinstance(created_at_data, datetime):
+                    created_at = created_at_data
+                else:
+                    continue
+                    
+                age_days = (today - created_at).days
+                
+                if age_days <= 7:
+                    aging_buckets["0-7 days"] += 1
+                elif age_days <= 30:
+                    aging_buckets["8-30 days"] += 1
+                elif age_days <= 90:
+                    aging_buckets["31-90 days"] += 1
+                else:
+                    aging_buckets["90+ days"] += 1
+            except (ValueError, AttributeError, TypeError):
+                pass
+    
+    for age_range, count in aging_buckets.items():
+        writer.writerow(['Age Range', age_range, count])
+    
+    writer.writerow([])  # Empty row
+    
+    # Overdue Tasks
+    writer.writerow(['Overdue Analysis', '', ''])
+    overdue_count = 0
+    today_date = date.today()
+    
+    for task in tasks:
+        due_date_str = task.get('due_date')
+        if due_date_str and task.get('status') != 'completed':
+            try:
+                if isinstance(due_date_str, str):
+                    due_date = datetime.fromisoformat(due_date_str).date()
+                elif isinstance(due_date_str, date):
+                    due_date = due_date_str
+                else:
+                    continue
+                    
+                if due_date < today_date:
+                    overdue_count += 1
+            except (ValueError, AttributeError, TypeError):
+                pass
+    
+    writer.writerow(['Overdue Tasks', 'Count', overdue_count])
+    
+    # Completion Rate
+    total_tasks = len(tasks)
+    completed_tasks = status_counts.get('Completed', 0)
+    completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+    writer.writerow(['Completion Rate', 'Percentage', f"{completion_rate:.1f}%"])
+    
+    # Create response
+    csv_content = output.getvalue()
+    output.close()
+    
+    # Create filename with current date
+    filename = f"task_reports_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
     
     # Return CSV file as download
     return StreamingResponse(

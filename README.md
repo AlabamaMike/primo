@@ -9,7 +9,9 @@
 - 📅 Due date tracking
 - 💾 Simple SQLite database storage
 - 🔒 Session-based authentication
-- 📄 CSV export functionality for task datathon-based task management web application using FastAPI, SQLite, Tailwind CSS, and HTMX.
+- 📄 CSV export functionality for task data
+- 📈 Comprehensive reporting dashboard with task analytics
+- ⏰ Task aging analysis and overdue trackingthon-based task management web application using FastAPI, SQLite, Tailwind CSS, and HTMX.
 
 ## Features
 
@@ -97,6 +99,8 @@ primo/
 - `PUT /tasks/{id}` - Update task
 - `DELETE /tasks/{id}` - Delete task
 - `GET /export/csv` - Export tasks as CSV file
+- `GET /reports` - Task reports dashboard
+- `GET /reports/export` - Export reports as CSV file
 - `POST /logout` - Logout
 
 ## Usage
@@ -107,6 +111,12 @@ primo/
 4. **Manage Tasks**: Edit or delete tasks using the buttons in the task list
 5. **Track Progress**: Update task status and priority as needed
 6. **Export Data**: Click the "Export CSV" button to download your tasks as a CSV file
+7. **View Reports**: Access the Reports page for comprehensive task analytics including:
+   - Task status distribution
+   - Priority analysis
+   - Task aging reports
+   - Overdue task tracking
+   - Completion rate metrics
 
 ## Technologies
 
