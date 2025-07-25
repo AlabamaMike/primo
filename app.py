@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, Form, HTTPException, Depends, status, Cookie
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from database import SQLiteDatabase
@@ -7,6 +7,8 @@ from models import TaskCreate, TaskUpdate, UserCreate, UserLogin, TaskStatus, Ta
 from typing import Optional, Annotated
 from datetime import date
 import secrets
+import csv
+import io
 
 app = FastAPI(title="Primo Task Manager", description="A task management app with SQLite backend")
 
@@ -246,6 +248,57 @@ async def delete_task(request: Request, task_id: int, user=Depends(get_current_u
         })
     else:
         raise HTTPException(status_code=400, detail=result.get("error", "Failed to delete task"))
+
+@app.get("/export/csv")
+async def export_tasks_csv(user=Depends(get_current_user)):
+    """Export user's tasks as CSV file"""
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    # Get all tasks for the user
+    tasks = await db.get_tasks(user["id"])
+    
+    # Create CSV content
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Write CSV headers
+    writer.writerow([
+        'Title', 
+        'Description', 
+        'Due Date', 
+        'Priority', 
+        'Status', 
+        'Created At', 
+        'Updated At'
+    ])
+    
+    # Write task data
+    for task in tasks:
+        writer.writerow([
+            task.get('title', ''),
+            task.get('description', ''),
+            task.get('due_date', ''),
+            task.get('priority', '').title(),
+            task.get('status', '').replace('_', ' ').title(),
+            task.get('created_at', ''),
+            task.get('updated_at', '')
+        ])
+    
+    # Create response
+    csv_content = output.getvalue()
+    output.close()
+    
+    # Create filename with current date
+    from datetime import datetime
+    filename = f"tasks_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    
+    # Return CSV file as download
+    return StreamingResponse(
+        io.StringIO(csv_content),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 @app.post("/logout")
 async def logout(request: Request, session_id: Optional[str] = Cookie(None)):

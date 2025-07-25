@@ -1,6 +1,15 @@
-# primo
+# pr## Features
 
-A Python-based task management web application using FastAPI, SQLite, Tailwind CSS, and HTMX.
+- 🔐 User authentication with secure password hashing
+- 📝 Personal task management with CRUD operations
+- 📱 Mobile-friendly responsive design with Tailwind CSS
+- ⚡ Real-time updates with HTMX
+- 🏷️ Task priorities (Low, Medium, High, Urgent)
+- 📊 Task statuses (To Do, In Progress, Completed)
+- 📅 Due date tracking
+- 💾 Simple SQLite database storage
+- 🔒 Session-based authentication
+- 📄 CSV export functionality for task datathon-based task management web application using FastAPI, SQLite, Tailwind CSS, and HTMX.
 
 ## Features
 
@@ -87,6 +96,7 @@ primo/
 - `GET /tasks/{id}/edit` - Edit form (HTMX)
 - `PUT /tasks/{id}` - Update task
 - `DELETE /tasks/{id}` - Delete task
+- `GET /export/csv` - Export tasks as CSV file
 - `POST /logout` - Logout
 
 ## Usage
@@ -96,6 +106,7 @@ primo/
 3. **Add Tasks**: Use the form on the dashboard to create new tasks
 4. **Manage Tasks**: Edit or delete tasks using the buttons in the task list
 5. **Track Progress**: Update task status and priority as needed
+6. **Export Data**: Click the "Export CSV" button to download your tasks as a CSV file
 
 ## Technologies
 
