@@ -6,6 +6,10 @@ __pycache__/
 # Environment variables
 .env
 
+# Database files
+primo.db
+*.db
+
 # Virtual environment
 .venv/
 venv/
