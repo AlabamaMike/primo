@@ -1,9 +1,10 @@
 from fastapi import FastAPI, Request, Form, HTTPException, Depends, status, Cookie
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from database import SQLiteDatabase
 from models import TaskCreate, TaskUpdate, UserCreate, UserLogin, TaskStatus, TaskPriority
+from ai_service import get_task_suggestions, expand_description, breakdown_task, ai_assistant
 from typing import Optional, Annotated
 from datetime import date, datetime, timedelta
 import secrets
@@ -524,6 +525,114 @@ async def logout(request: Request, session_id: Optional[str] = Cookie(None)):
     response = RedirectResponse(url="/login", status_code=302)
     response.delete_cookie(key="session_id")
     return response
+
+# AI-Powered Task Assistance Endpoints
+
+@app.get("/ai/suggestions")
+async def get_ai_task_suggestions(
+    partial: str = "",
+    user=Depends(get_current_user)
+):
+    """Get AI-powered task name suggestions"""
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    if not ai_assistant.is_enabled():
+        return JSONResponse({"suggestions": [], "ai_enabled": False})
+    
+    if len(partial.strip()) < 2:
+        return JSONResponse({"suggestions": [], "ai_enabled": True})
+    
+    try:
+        # Get user's recent tasks for context
+        recent_tasks = await db.get_tasks(user["id"])
+        recent_task_titles = [task.get("title", "") for task in recent_tasks[:10]]
+        
+        context = {
+            "existing_tasks": recent_task_titles,
+            "user_id": user["id"]
+        }
+        
+        suggestions = await get_task_suggestions(partial, context)
+        
+        return JSONResponse({
+            "suggestions": suggestions,
+            "ai_enabled": True,
+            "partial": partial
+        })
+        
+    except Exception as e:
+        print(f"Error getting AI suggestions: {e}")
+        return JSONResponse({"suggestions": [], "ai_enabled": True, "error": str(e)})
+
+@app.post("/ai/expand-description")
+async def expand_task_description(
+    request: Request,
+    title: str = Form(...),
+    description: str = Form(""),
+    user=Depends(get_current_user)
+):
+    """Expand a task description using AI"""
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    if not ai_assistant.is_enabled():
+        return JSONResponse({"expanded_description": description, "ai_enabled": False})
+    
+    try:
+        expanded = await expand_description(title, description)
+        return JSONResponse({
+            "expanded_description": expanded,
+            "ai_enabled": True,
+            "original_description": description
+        })
+        
+    except Exception as e:
+        print(f"Error expanding description: {e}")
+        return JSONResponse({
+            "expanded_description": description, 
+            "ai_enabled": True, 
+            "error": str(e)
+        })
+
+@app.post("/ai/breakdown-task")
+async def breakdown_complex_task(
+    request: Request,
+    title: str = Form(...),
+    description: str = Form(""),
+    user=Depends(get_current_user)
+):
+    """Break down a complex task into subtasks using AI"""
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    if not ai_assistant.is_enabled():
+        return JSONResponse({"subtasks": [], "ai_enabled": False})
+    
+    try:
+        subtasks = await breakdown_task(title, description)
+        return JSONResponse({
+            "subtasks": subtasks,
+            "ai_enabled": True,
+            "original_title": title
+        })
+        
+    except Exception as e:
+        print(f"Error breaking down task: {e}")
+        return JSONResponse({
+            "subtasks": [], 
+            "ai_enabled": True, 
+            "error": str(e)
+        })
+
+@app.get("/ai/status")
+async def get_ai_status():
+    """Get AI service status"""
+    return JSONResponse({
+        "ai_enabled": ai_assistant.is_enabled(),
+        "model": ai_assistant.model if ai_assistant.is_enabled() else None,
+        "message": "AI assistance ready" if ai_assistant.is_enabled() else "AI assistance requires OpenAI API key"
+    })
 
 if __name__ == "__main__":
     import uvicorn

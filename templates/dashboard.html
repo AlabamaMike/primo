@@ -39,11 +39,22 @@
                         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <div>
                                 <label for="title" class="block text-sm font-medium text-gray-700">Title</label>
-                                <input type="text" 
-                                       name="title" 
-                                       id="title" 
-                                       required
-                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm">
+                                <div class="relative">
+                                    <input type="text" 
+                                           name="title" 
+                                           id="title" 
+                                           required
+                                           autocomplete="off"
+                                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                                           placeholder="Start typing for AI suggestions...">
+                                    <div id="ai-suggestions" class="absolute z-10 w-full bg-white border border-gray-300 rounded-md shadow-lg mt-1 hidden"></div>
+                                </div>
+                                <div class="mt-2 text-xs text-gray-500" id="ai-status">
+                                    <span id="ai-indicator" class="inline-flex items-center">
+                                        <span class="w-2 h-2 bg-gray-400 rounded-full mr-1"></span>
+                                        Checking AI status...
+                                    </span>
+                                </div>
                             </div>
                             <div>
                                 <label for="due_date" class="block text-sm font-medium text-gray-700">Due Date</label>
@@ -56,11 +67,28 @@
                         
                         <div>
                             <label for="description" class="block text-sm font-medium text-gray-700">Description</label>
-                            <textarea name="description" 
-                                      id="description" 
-                                      rows="3"
-                                      class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                                      placeholder="Optional description..."></textarea>
+                            <div class="relative">
+                                <textarea name="description" 
+                                          id="description" 
+                                          rows="3"
+                                          class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                                          placeholder="Optional description..."></textarea>
+                                <button type="button" 
+                                        id="expand-description-btn"
+                                        class="absolute top-2 right-2 p-1 text-gray-400 hover:text-primary-600 focus:outline-none"
+                                        title="Expand description with AI">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                            <div class="mt-1 flex space-x-2">
+                                <button type="button" 
+                                        id="breakdown-task-btn"
+                                        class="text-xs text-primary-600 hover:text-primary-800 focus:outline-none">
+                                    🧠 Break down into subtasks
+                                </button>
+                            </div>
                         </div>
                         
                         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -93,4 +121,182 @@
         </div>
     </div>
 </div>
+
+<!-- AI Assistance JavaScript -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    let aiEnabled = false;
+    let suggestionTimeout;
+    const titleInput = document.getElementById('title');
+    const suggestionsDiv = document.getElementById('ai-suggestions');
+    const aiStatus = document.getElementById('ai-status');
+    const aiIndicator = document.getElementById('ai-indicator');
+    const expandBtn = document.getElementById('expand-description-btn');
+    const breakdownBtn = document.getElementById('breakdown-task-btn');
+    const descriptionTextarea = document.getElementById('description');
+
+    // Check AI status on load
+    checkAIStatus();
+
+    async function checkAIStatus() {
+        try {
+            const response = await fetch('/ai/status');
+            const data = await response.json();
+            aiEnabled = data.ai_enabled;
+            
+            if (aiEnabled) {
+                aiIndicator.innerHTML = '<span class="w-2 h-2 bg-green-400 rounded-full mr-1"></span>AI assistance ready';
+                aiIndicator.classList.add('text-green-600');
+            } else {
+                aiIndicator.innerHTML = '<span class="w-2 h-2 bg-yellow-400 rounded-full mr-1"></span>AI assistance unavailable';
+                aiIndicator.classList.add('text-yellow-600');
+                expandBtn.style.display = 'none';
+                breakdownBtn.style.display = 'none';
+            }
+        } catch (error) {
+            console.error('Error checking AI status:', error);
+            aiIndicator.innerHTML = '<span class="w-2 h-2 bg-red-400 rounded-full mr-1"></span>AI service error';
+            aiIndicator.classList.add('text-red-600');
+        }
+    }
+
+    // Task name suggestions
+    titleInput.addEventListener('input', function() {
+        if (!aiEnabled) return;
+        
+        clearTimeout(suggestionTimeout);
+        const partial = this.value.trim();
+        
+        if (partial.length < 2) {
+            hideSuggestions();
+            return;
+        }
+
+        suggestionTimeout = setTimeout(async () => {
+            try {
+                const response = await fetch(`/ai/suggestions?partial=${encodeURIComponent(partial)}`);
+                const data = await response.json();
+                
+                if (data.suggestions && data.suggestions.length > 0) {
+                    showSuggestions(data.suggestions);
+                } else {
+                    hideSuggestions();
+                }
+            } catch (error) {
+                console.error('Error getting suggestions:', error);
+                hideSuggestions();
+            }
+        }, 300);
+    });
+
+    function showSuggestions(suggestions) {
+        suggestionsDiv.innerHTML = '';
+        suggestions.forEach(suggestion => {
+            const div = document.createElement('div');
+            div.className = 'px-3 py-2 cursor-pointer hover:bg-gray-100 border-b border-gray-200 last:border-b-0';
+            div.textContent = suggestion;
+            div.addEventListener('click', () => {
+                titleInput.value = suggestion;
+                hideSuggestions();
+                titleInput.focus();
+            });
+            suggestionsDiv.appendChild(div);
+        });
+        suggestionsDiv.classList.remove('hidden');
+    }
+
+    function hideSuggestions() {
+        suggestionsDiv.classList.add('hidden');
+    }
+
+    // Hide suggestions when clicking outside
+    document.addEventListener('click', function(e) {
+        if (!titleInput.contains(e.target) && !suggestionsDiv.contains(e.target)) {
+            hideSuggestions();
+        }
+    });
+
+    // Expand description with AI
+    expandBtn.addEventListener('click', async function() {
+        if (!aiEnabled) return;
+        
+        const title = titleInput.value.trim();
+        const currentDescription = descriptionTextarea.value.trim();
+        
+        if (!title) {
+            alert('Please enter a task title first');
+            return;
+        }
+
+        const originalText = this.innerHTML;
+        this.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>';
+        
+        try {
+            const formData = new FormData();
+            formData.append('title', title);
+            formData.append('description', currentDescription);
+            
+            const response = await fetch('/ai/expand-description', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const data = await response.json();
+            
+            if (data.expanded_description && data.expanded_description !== currentDescription) {
+                descriptionTextarea.value = data.expanded_description;
+                descriptionTextarea.focus();
+            }
+        } catch (error) {
+            console.error('Error expanding description:', error);
+            alert('Error expanding description');
+        } finally {
+            this.innerHTML = originalText;
+        }
+    });
+
+    // Break down task into subtasks
+    breakdownBtn.addEventListener('click', async function() {
+        if (!aiEnabled) return;
+        
+        const title = titleInput.value.trim();
+        const description = descriptionTextarea.value.trim();
+        
+        if (!title) {
+            alert('Please enter a task title first');
+            return;
+        }
+
+        const originalText = this.textContent;
+        this.textContent = '🧠 Generating subtasks...';
+        
+        try {
+            const formData = new FormData();
+            formData.append('title', title);
+            formData.append('description', description);
+            
+            const response = await fetch('/ai/breakdown-task', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const data = await response.json();
+            
+            if (data.subtasks && data.subtasks.length > 0) {
+                const subtaskText = data.subtasks.map((task, i) => `${i + 1}. ${task}`).join('\n');
+                const currentDesc = descriptionTextarea.value.trim();
+                const newDesc = currentDesc ? `${currentDesc}\n\nSubtasks:\n${subtaskText}` : `Subtasks:\n${subtaskText}`;
+                descriptionTextarea.value = newDesc;
+                descriptionTextarea.focus();
+            }
+        } catch (error) {
+            console.error('Error breaking down task:', error);
+            alert('Error breaking down task');
+        } finally {
+            this.textContent = originalText;
+        }
+    });
+});
+</script>
+
 {% endblock %}
