@@ -325,6 +325,14 @@ async def reports_page(request: Request, user=Depends(get_current_user)):
         "90+ days": 0
     }
     
+    # Task Aging by Priority Analysis
+    aging_by_priority = {
+        "Low": {"0-7 days": 0, "8-30 days": 0, "31-90 days": 0, "90+ days": 0},
+        "Medium": {"0-7 days": 0, "8-30 days": 0, "31-90 days": 0, "90+ days": 0},
+        "High": {"0-7 days": 0, "8-30 days": 0, "31-90 days": 0, "90+ days": 0},
+        "Urgent": {"0-7 days": 0, "8-30 days": 0, "31-90 days": 0, "90+ days": 0}
+    }
+    
     for task in tasks:
         # Count by status
         status_display = task.get('status', '').replace('_', ' ').title()
@@ -363,14 +371,22 @@ async def reports_page(request: Request, user=Depends(get_current_user)):
                     
                 age_days = (datetime.now() - created_at).days
                 
+                # Determine age bucket
                 if age_days <= 7:
-                    aging_buckets["0-7 days"] += 1
+                    age_bucket = "0-7 days"
                 elif age_days <= 30:
-                    aging_buckets["8-30 days"] += 1
+                    age_bucket = "8-30 days"
                 elif age_days <= 90:
-                    aging_buckets["31-90 days"] += 1
+                    age_bucket = "31-90 days"
                 else:
-                    aging_buckets["90+ days"] += 1
+                    age_bucket = "90+ days"
+                
+                # Update overall aging buckets
+                aging_buckets[age_bucket] += 1
+                
+                # Update aging by priority
+                if priority_display in aging_by_priority:
+                    aging_by_priority[priority_display][age_bucket] += 1
             except (ValueError, AttributeError, TypeError):
                 pass
     
@@ -388,6 +404,7 @@ async def reports_page(request: Request, user=Depends(get_current_user)):
         "overdue_count": overdue_count,
         "completion_rate": round(completion_rate, 1),
         "aging_buckets": aging_buckets,
+        "aging_by_priority": aging_by_priority,
         "tasks": tasks,
         "TaskStatus": TaskStatus,
         "TaskPriority": TaskPriority
@@ -442,6 +459,46 @@ async def export_reports(request: Request, user=Depends(get_current_user)):
         "31-90 days": 0,
         "90+ days": 0
     }
+    
+    # Task Aging by Priority Analysis
+    aging_by_priority = {
+        "Low": {"0-7 days": 0, "8-30 days": 0, "31-90 days": 0, "90+ days": 0},
+        "Medium": {"0-7 days": 0, "8-30 days": 0, "31-90 days": 0, "90+ days": 0},
+        "High": {"0-7 days": 0, "8-30 days": 0, "31-90 days": 0, "90+ days": 0},
+        "Urgent": {"0-7 days": 0, "8-30 days": 0, "31-90 days": 0, "90+ days": 0}
+    }
+    
+    today = datetime.now()
+    for task in tasks:
+        # Calculate task age and priority
+        created_at_data = task.get('created_at', '')
+        priority_display = task.get('priority', '').title()
+        
+        if created_at_data and priority_display in aging_by_priority:
+            try:
+                if isinstance(created_at_data, str):
+                    created_at = datetime.fromisoformat(created_at_data.replace('Z', '+00:00'))
+                elif isinstance(created_at_data, datetime):
+                    created_at = created_at_data
+                else:
+                    continue
+                    
+                age_days = (today - created_at).days
+                
+                # Determine age bucket
+                if age_days <= 7:
+                    age_bucket = "0-7 days"
+                elif age_days <= 30:
+                    age_bucket = "8-30 days"
+                elif age_days <= 90:
+                    age_bucket = "31-90 days"
+                else:
+                    age_bucket = "90+ days"
+                
+                # Update aging by priority
+                aging_by_priority[priority_display][age_bucket] += 1
+            except (ValueError, AttributeError, TypeError):
+                pass
     
     today = datetime.now()
     for task in tasks:
@@ -501,6 +558,19 @@ async def export_reports(request: Request, user=Depends(get_current_user)):
     completed_tasks = status_counts.get('Completed', 0)
     completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
     writer.writerow(['Completion Rate', 'Percentage', f"{completion_rate:.1f}%"])
+    
+    writer.writerow([])  # Empty row
+    
+    # Tasks by Age Grouped by Priority Report
+    writer.writerow(['Tasks by Age Grouped by Priority', '', ''])
+    for priority, age_data in aging_by_priority.items():
+        priority_total = sum(age_data.values())
+        if priority_total > 0:
+            writer.writerow(['Priority', priority, f'Total: {priority_total}'])
+            for age_range, count in age_data.items():
+                if count > 0:
+                    writer.writerow(['', age_range, count])
+            writer.writerow([])  # Empty row after each priority
     
     # Create response
     csv_content = output.getvalue()
