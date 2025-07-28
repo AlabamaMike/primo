@@ -6,6 +6,11 @@ import asyncio
 from typing import List, Optional, Dict, Any
 from openai import AsyncOpenAI
 import logging
+from dotenv import load_dotenv
+import httpx
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Set up logging
 logging.getLogger("openai").setLevel(logging.WARNING)
@@ -25,7 +30,17 @@ class AITaskAssistant:
         self.client = None
         
         if self.api_key:
-            self.client = AsyncOpenAI(api_key=self.api_key)
+            try:
+                # Create a custom HTTP client with SSL verification disabled for development
+                # In production, you should use proper SSL certificates
+                http_client = httpx.AsyncClient(verify=False)
+                self.client = AsyncOpenAI(
+                    api_key=self.api_key,
+                    http_client=http_client
+                )
+            except Exception as e:
+                print(f"Failed to initialize OpenAI client: {e}")
+                self.client = None
     
     def is_enabled(self) -> bool:
         """Check if AI assistance is enabled (API key is available)"""
